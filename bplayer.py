@@ -39,8 +39,12 @@ def main(url):
         duration_marquee=20,
         is_reduce_comments=True,
     )
-    src = downloader.dash_streams["dash-flv"]["src"]
-    headers = "Referer:{0},User-Agent:{1}".format(downloader.referer, downloader.ua)
+    src = sorted(
+        downloader.dash_streams.values(), key=lambda x: x["size"], reverse=True
+    )[0]["src"]
+    headers = "Referer:{0},User-Agent:{1}".format(
+        downloader.referer, downloader.ua.replace(",", "\,")
+    )
     mpv = [
         "mpv",
         "--http-header-fields=" + headers,
