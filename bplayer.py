@@ -39,9 +39,13 @@ def main(url):
         duration_marquee=20,
         is_reduce_comments=True,
     )
-    src = sorted(
-        downloader.dash_streams.values(), key=lambda x: x["size"], reverse=True
-    )[0]["src"]
+    quality = {v["id"]: v["quality"] for v in downloader.stream_qualities.values()}
+    src = downloader.dash_streams[
+        sorted(
+            downloader.dash_streams.keys(),
+            key=lambda k: quality.get(k.replace("dash-", ""), 0),
+        )[-1]
+    ]["src"]
     headers = "Referer:{0},User-Agent:{1}".format(
         downloader.referer, downloader.ua.replace(",", "\,")
     )
