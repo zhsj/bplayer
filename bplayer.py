@@ -77,7 +77,12 @@ def play_acfun(url):
     acfun_download(url)
 
 
-def main(url):
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("url")
+    args = parser.parse_args()
+    logging.getLogger().setLevel(logging.DEBUG)
+    url = args.url
     if url.startswith("https://www.bilibili.com"):
         play_bilibili(url)
     elif url.startswith("https://www.acfun.cn"):
@@ -85,10 +90,6 @@ def main(url):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("url")
-    args = parser.parse_args()
-    logging.getLogger().setLevel(logging.DEBUG)
-    main(args.url)
+    main()
 
 # vim: et:ts=4:sts=4:sw=4
