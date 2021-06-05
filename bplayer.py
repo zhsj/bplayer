@@ -16,19 +16,7 @@ sys.path.extend(
     ]
 )
 
-
-def fake_download(url, title, *args, **kwargs):
-    mpv = ["mpv", "--title=" + title, url]
-    logging.debug(shlex.join(mpv))
-    subprocess.call(mpv)
-
-
-from you_get import common
-
-common.download_url_ffmpeg = fake_download
-
-from you_get.extractors import Bilibili
-from you_get.extractors import acfun_download
+from you_get.extractors import Bilibili, AcFun
 from danmaku2ass import Danmaku2ASS
 
 
@@ -74,7 +62,19 @@ def play_bilibili(url):
 
 
 def play_acfun(url):
-    acfun_download(url)
+    downloader = AcFun()
+    downloader.url = url
+    downloader.prepare()
+    for stream_type in downloader.stream_types:
+        if stream_type["id"] in downloader.streams:
+            mpv = [
+                "mpv",
+                "--title=" + downloader.title,
+                downloader.streams[stream_type["id"]]["src"],
+            ]
+            logging.debug(shlex.join(mpv))
+            subprocess.call(mpv)
+            return
 
 
 def main():
