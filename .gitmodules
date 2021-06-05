@@ -1,6 +1,7 @@
 [submodule "third_party/danmaku2ass"]
 	path = third_party/danmaku2ass
 	url = https://github.com/m13253/danmaku2ass
+	ignore = untracked
 [submodule "third_party/you-get"]
 	path = third_party/you-get
 	url = https://github.com/soimort/you-get
