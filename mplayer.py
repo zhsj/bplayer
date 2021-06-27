@@ -12,7 +12,9 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chr
 def get_info(url, idx):
     cookie = ""
     try:
-        with open(os.path.join(os.path.dirname(__file__), "mplayer.cookie")) as f:
+        with open(
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "mplayer.cookie")
+        ) as f:
             cookie = f.read().strip()
     except Exception as e:
         logging.debug("read cookie %s", e)
