@@ -2,29 +2,61 @@
 
 import argparse
 import io
+import json
 import logging
+import os
+import time
+import urllib.request
+import re
 import shlex
 import subprocess
 import sys
 import tempfile
-from os.path import abspath, join, dirname
+from os.path import abspath, join, dirname, realpath
 
 sys.path.extend(
     [
-        abspath(join(dirname(__file__), "third_party", "danmaku2ass")),
-        abspath(join(dirname(__file__), "third_party", "you-get", "src")),
+        abspath(join(dirname(realpath(__file__)), "third_party", "danmaku2ass")),
+        abspath(join(dirname(realpath(__file__)), "third_party", "you-get", "src")),
     ]
 )
 
-from you_get.extractors import Bilibili, AcFun
+
+def fake_download_urls(urls, title, *args, **kwargs):
+    mpv = ["mpv", "--title=" + title, urls[0]]
+    logging.debug(shlex.join(mpv))
+    subprocess.call(mpv)
+
+
+from you_get import common
+
+common.download_urls = fake_download_urls
+
+from you_get.extractors import Bilibili, AcFun, miaopai_download
 from danmaku2ass import Danmaku2ASS
 
 
 def play_bilibili(url):
     downloader = Bilibili()
+    downloader.stream_types.append(
+        {
+            "id": "hdflv2_8k",
+            "quality": 127,
+            "audio_quality": 30280,
+            "container": "FLV",
+            "video_resolution": "4320p",
+            "desc": "8K 超高清",
+        },
+    )
     downloader.url = url
     downloader.extract()
-    downloader.prepare()
+    while True:
+        try:
+            downloader.prepare()
+            break
+        except Exception as e:
+            logging.debug(e, exc_info=True)
+            time.sleep(1)
     danmaku = io.StringIO(downloader.danmaku)
     sub_file = tempfile.NamedTemporaryFile()
     Danmaku2ASS(
@@ -77,6 +109,45 @@ def play_acfun(url):
             return
 
 
+def play_weibo(url):
+    cookie = ""
+    try:
+        with open(
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "weibo.cookie")
+        ) as f:
+            cookie = f.read().strip()
+    except Exception as e:
+        logging.debug("read cookie %s", e)
+
+    match = re.match(r"https://video.weibo.com/show\?fid=(\d{4}:\w+)", url)
+    if match is None:
+        return
+    fid = match[1]
+    req = urllib.request.Request(
+        "https://weibo.com/tv/api/component?page=/tv/show/" + fid,
+        method="POST",
+        headers={"referer": "https://weibo.com/tv/show/" + fid, "cookie": cookie},
+        data=("data=" + json.dumps({"Component_Play_Playinfo": {"oid": fid}})).encode(),
+    )
+    resp = urllib.request.urlopen(req)
+    r = json.loads(resp.read())
+    title = r["data"]["Component_Play_Playinfo"]["title"]
+    urls = r["data"]["Component_Play_Playinfo"]["urls"]
+    url = (
+        "https:"
+        + sorted(
+            urls.items(), key=lambda x: int(re.findall("(\d+)", x[0])[0]), reverse=True
+        )[0][1]
+    )
+    mpv = [
+        "mpv",
+        "--title=" + title,
+        url,
+    ]
+    logging.debug(shlex.join(mpv))
+    subprocess.call(mpv)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
@@ -87,6 +158,8 @@ def main():
         play_bilibili(url)
     elif url.startswith("https://www.acfun.cn"):
         play_acfun(url)
+    elif url.startswith("https://video.weibo.com"):
+        play_weibo(url)
 
 
 if __name__ == "__main__":
