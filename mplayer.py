@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
-    parser.add_argument("idx", type=int)
+    parser.add_argument("idx", type=int, nargs="?", default=-1)
     parser.add_argument("-d", "--dry-run", action="store_true")
     args = parser.parse_args()
     logging.debug("args %s", args)
