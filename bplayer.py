@@ -12,6 +12,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from http import cookiejar, cookies
 from os.path import abspath, join, dirname, realpath
 
 sys.path.extend(
@@ -37,6 +38,37 @@ from danmaku2ass import Danmaku2ASS
 
 
 def play_bilibili(url):
+    try:
+        with open(
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "bilibili.cookie")
+        ) as f:
+            c = cookies.SimpleCookie()
+            c.load(f.read())
+            common.cookies = cookiejar.MozillaCookieJar()
+            for k, v in c.items():
+                common.cookies.set_cookie(
+                    cookiejar.Cookie(
+                        0,
+                        k,
+                        v.value,
+                        None,
+                        False,
+                        "",
+                        False,
+                        False,
+                        "",
+                        False,
+                        False,
+                        False,
+                        False,
+                        None,
+                        None,
+                        {},
+                    )
+                )
+    except Exception as e:
+        logging.debug("read cookie %s", e)
+
     downloader = Bilibili()
     downloader.stream_types.append(
         {
@@ -72,23 +104,40 @@ def play_bilibili(url):
         is_reduce_comments=True,
     )
     quality = {v["id"]: v["quality"] for v in downloader.stream_qualities.values()}
-    src = downloader.dash_streams[
-        sorted(
-            downloader.dash_streams.keys(),
-            key=lambda k: quality.get(k.replace("dash-", ""), 0),
-        )[-1]
-    ]["src"]
+
     headers = "Referer:{0},User-Agent:{1}".format(
         downloader.referer, downloader.ua.replace(",", "\,")
     )
-    mpv = [
-        "mpv",
-        "--http-header-fields=" + headers,
-        "--title=" + downloader.title,
-        "--sub-file=" + sub_file.name,
-        "--audio-file=" + src[1][0],
-        src[0][0],
-    ]
+
+    if downloader.dash_streams:
+        src = downloader.dash_streams[
+            sorted(
+                downloader.dash_streams.keys(),
+                key=lambda k: quality.get(k.replace("dash-", ""), 0),
+            )[-1]
+        ]["src"]
+        mpv = [
+            "mpv",
+            "--http-header-fields=" + headers,
+            "--title=" + downloader.title,
+            "--sub-file=" + sub_file.name,
+            "--audio-file=" + src[1][0],
+            src[0][0],
+        ]
+    if downloader.streams:
+        src = downloader.streams[
+            sorted(
+                downloader.streams.keys(),
+                key=lambda k: quality.get(k.replace("dash-", ""), 0),
+            )[-1]
+        ]["src"]
+        mpv = [
+            "mpv",
+            "--http-header-fields=" + headers,
+            "--title=" + downloader.title,
+            "--sub-file=" + sub_file.name,
+            src[0],
+        ]
     logging.debug(shlex.join(mpv))
     subprocess.call(mpv)
 
