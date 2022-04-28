@@ -197,18 +197,66 @@ def play_weibo(url):
     subprocess.call(mpv)
 
 
+def play_weibo_live(url):
+    cookie = ""
+    try:
+        with open(
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "weibo.cookie")
+        ) as f:
+            cookie = f.read().strip()
+    except Exception as e:
+        logging.debug("read cookie %s", e)
+
+    match = re.match(r"https://weibo.com/l/wblive/p/show/(\d{4}:\w+)", url)
+    if match is None:
+        return
+    live_id = match[1]
+    req = urllib.request.Request(
+        "https://weibo.com/l/!/2/wblive/room/show_pc_live.json?live_id=" + live_id,
+        method="GET",
+        headers={"referer": url, "cookie": cookie},
+    )
+    resp = urllib.request.urlopen(req)
+    r = json.loads(resp.read())
+    title = r["data"]["title"]
+    url = r["data"]["live_origin_hls_url"]
+    if not url:
+        url = r["data"]["replay_origin_url"]
+    mpv = [
+        "mpv",
+        "--title=" + title,
+        url,
+    ]
+    logging.debug(shlex.join(mpv))
+    subprocess.call(mpv)
+
+
+def convert_short_url(url):
+    class noRedirect(urllib.request.HTTPRedirectHandler):
+        def http_error_302(self, req, fp, code, msg, headers):
+            return headers
+
+    if url.startswith("http://t.cn"):
+        headers = urllib.request.build_opener(noRedirect).open(url)
+        return headers.get("Location")
+
+    return url
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
     args = parser.parse_args()
     logging.getLogger().setLevel(logging.DEBUG)
-    url = args.url
+    url = convert_short_url(args.url)
     if url.startswith("https://www.bilibili.com"):
         play_bilibili(url)
     elif url.startswith("https://www.acfun.cn"):
         play_acfun(url)
     elif url.startswith("https://video.weibo.com"):
         play_weibo(url)
+    elif url.startswith("https://weibo.com/l/wblive"):
+        play_weibo_live(url)
 
 
 if __name__ == "__main__":
