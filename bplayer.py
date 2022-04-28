@@ -23,18 +23,9 @@ sys.path.extend(
 )
 
 
-def fake_download_urls(urls, title, *args, **kwargs):
-    mpv = ["mpv", "--title=" + title, urls[0]]
-    logging.debug(shlex.join(mpv))
-    subprocess.call(mpv)
-
-
-from you_get import common
-
-common.download_urls = fake_download_urls
-
-from you_get.extractors import Bilibili, AcFun, miaopai_download
 from danmaku2ass import Danmaku2ASS
+from you_get.extractors import Bilibili, AcFun
+from you_get import common
 
 
 def play_bilibili(url):
@@ -70,16 +61,6 @@ def play_bilibili(url):
         logging.debug("read cookie %s", e)
 
     downloader = Bilibili()
-    downloader.stream_types.append(
-        {
-            "id": "hdflv2_8k",
-            "quality": 127,
-            "audio_quality": 30280,
-            "container": "FLV",
-            "video_resolution": "4320p",
-            "desc": "8K 超高清",
-        },
-    )
     downloader.url = url
     downloader.extract()
     while True:
@@ -110,12 +91,14 @@ def play_bilibili(url):
     )
 
     if downloader.dash_streams:
-        src = downloader.dash_streams[
+        stream = downloader.dash_streams[
             sorted(
                 downloader.dash_streams.keys(),
                 key=lambda k: quality.get(k.replace("dash-", ""), 0),
             )[-1]
-        ]["src"]
+        ]
+        logging.debug("stream quality %s", stream["quality"])
+        src = stream["src"]
         mpv = [
             "mpv",
             "--http-header-fields=" + headers,
@@ -124,13 +107,15 @@ def play_bilibili(url):
             "--audio-file=" + src[1][0],
             src[0][0],
         ]
-    if downloader.streams:
-        src = downloader.streams[
+    elif downloader.streams:
+        stream = downloader.streams[
             sorted(
                 downloader.streams.keys(),
                 key=lambda k: quality.get(k.replace("dash-", ""), 0),
             )[-1]
-        ]["src"]
+        ]
+        logging.debug("stream quality %s", stream["quality"])
+        src = stream["src"]
         mpv = [
             "mpv",
             "--http-header-fields=" + headers,
