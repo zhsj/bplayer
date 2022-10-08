@@ -7,6 +7,7 @@ import logging
 import os
 import time
 import urllib.request
+import urllib.parse
 import re
 import shlex
 import subprocess
@@ -70,12 +71,19 @@ def play_bilibili(url):
         except Exception as e:
             logging.debug(e, exc_info=True)
             time.sleep(1)
+
+    headers = "Referer:{0},User-Agent:{1}".format(
+        downloader.referer, downloader.ua.replace(",", "\,")
+    )
+
+    mpv = ["mpv", "--http-header-fields=" + headers, "--title=" + downloader.title]
+
+    danmaku_file = tempfile.NamedTemporaryFile()
     danmaku = io.StringIO(downloader.danmaku)
-    sub_file = tempfile.NamedTemporaryFile()
     Danmaku2ASS(
         [danmaku],
         "autodetect",
-        sub_file.name,
+        danmaku_file.name,
         1920,
         1080,
         reserve_blank=100,
@@ -84,30 +92,43 @@ def play_bilibili(url):
         duration_marquee=20,
         is_reduce_comments=True,
     )
+
+    mpv.append("--sub-file=" + danmaku_file.name)
+
+    if hasattr(downloader, "subtitle"):
+
+        def sec2time(sec):
+            h = int(sec) // 3600
+            m = int(sec) // 60 % 60
+            s = sec % 60
+            f = int(sec * 1000) % 1000
+            return "%02d:%02d:%02d,%03d" % (h, m, int(s), f)
+
+        sub_file = tempfile.NamedTemporaryFile()
+        with open(sub_file.name, "w") as f:
+            for idx, item in enumerate(json.loads(downloader.subtitle)["body"]):
+                f.write(
+                    "%d\n%s --> %s\n%s\n\n"
+                    % (
+                        idx + 1,
+                        sec2time(item["from"]),
+                        sec2time(item["to"]),
+                        item["content"],
+                    )
+                )
+        mpv.append("--sub-file=" + sub_file.name)
+        mpv.append("--secondary-sid=2")
+
     quality = {v["id"]: v["quality"] for v in downloader.stream_qualities.values()}
 
-    headers = "Referer:{0},User-Agent:{1}".format(
-        downloader.referer, downloader.ua.replace(",", "\,")
-    )
+    def replace_hk(url):
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc.startswith("cn-hk"):
+            return parsed._replace(netloc="upos-sz-mirrorali.bilivideo.com").geturl()
+        else:
+            return url
 
-    if downloader.dash_streams:
-        stream = downloader.dash_streams[
-            sorted(
-                downloader.dash_streams.keys(),
-                key=lambda k: quality.get(k.replace("dash-", ""), 0),
-            )[-1]
-        ]
-        logging.debug("stream quality %s", stream["quality"])
-        src = stream["src"]
-        mpv = [
-            "mpv",
-            "--http-header-fields=" + headers,
-            "--title=" + downloader.title,
-            "--sub-file=" + sub_file.name,
-            "--audio-file=" + src[1][0],
-            src[0][0],
-        ]
-    elif downloader.streams:
+    if downloader.streams:
         stream = downloader.streams[
             sorted(
                 downloader.streams.keys(),
@@ -116,15 +137,28 @@ def play_bilibili(url):
         ]
         logging.debug("stream quality %s", stream["quality"])
         src = stream["src"]
-        mpv = [
-            "mpv",
-            "--http-header-fields=" + headers,
-            "--title=" + downloader.title,
-            "--sub-file=" + sub_file.name,
-            src[0],
+        mpv.append(replace_hk(src[0]))
+    elif downloader.dash_streams:
+        stream = downloader.dash_streams[
+            sorted(
+                downloader.dash_streams.keys(),
+                key=lambda k: quality.get(k.replace("dash-", ""), 0),
+            )[-1]
         ]
+        logging.debug("stream quality %s", stream["quality"])
+        src = stream["src"]
+        mpv.append("--audio-file=" + replace_hk(src[1][0]))
+        mpv.append(replace_hk(src[0][0]))
+
     logging.debug(shlex.join(mpv))
-    subprocess.call(mpv)
+    subprocess.call(
+        mpv,
+        env={
+            k: v
+            for k, v in os.environ.items()
+            if k not in ["http_proxy", "https_proxy"]
+        },
+    )
 
 
 def play_acfun(url):
@@ -234,7 +268,7 @@ def main():
     args = parser.parse_args()
     logging.getLogger().setLevel(logging.DEBUG)
     url = convert_short_url(args.url)
-    if url.startswith("https://www.bilibili.com"):
+    if re.match(r"https?://www.bilibili.com", url):
         play_bilibili(url)
     elif url.startswith("https://www.acfun.cn"):
         play_acfun(url)
