@@ -29,37 +29,46 @@ from you_get.extractors import Bilibili, AcFun
 from you_get import common
 
 
-def play_bilibili(url):
+UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36"
+
+
+def get_cookie(name):
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), name + ".cookie")
     try:
-        with open(
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "bilibili.cookie")
-        ) as f:
-            c = cookies.SimpleCookie()
-            c.load(f.read())
-            common.cookies = cookiejar.MozillaCookieJar()
-            for k, v in c.items():
-                common.cookies.set_cookie(
-                    cookiejar.Cookie(
-                        0,
-                        k,
-                        v.value,
-                        None,
-                        False,
-                        "",
-                        False,
-                        False,
-                        "",
-                        False,
-                        False,
-                        False,
-                        False,
-                        None,
-                        None,
-                        {},
-                    )
-                )
+        with open(path) as f:
+            return f.read().strip()
     except Exception as e:
         logging.debug("read cookie %s", e)
+        return ""
+
+
+def play_bilibili(url):
+    cookie = get_cookie("bilibili")
+    if cookie:
+        c = cookies.SimpleCookie()
+        c.load(cookie)
+        common.cookies = cookiejar.MozillaCookieJar()
+        for k, v in c.items():
+            common.cookies.set_cookie(
+                cookiejar.Cookie(
+                    0,
+                    k,
+                    v.value,
+                    None,
+                    False,
+                    "",
+                    False,
+                    False,
+                    "",
+                    False,
+                    False,
+                    False,
+                    False,
+                    None,
+                    None,
+                    {},
+                )
+            )
 
     downloader = Bilibili()
     downloader.url = url
@@ -76,7 +85,11 @@ def play_bilibili(url):
         downloader.referer, downloader.ua.replace(",", "\,")
     )
 
-    mpv = ["mpv", "--http-header-fields=" + headers, "--title=" + downloader.title]
+    mpv = [
+        "mpv",
+        "--http-header-fields=" + headers,
+        "--force-media-title=" + downloader.title,
+    ]
 
     danmaku_file = tempfile.NamedTemporaryFile()
     danmaku = io.StringIO(downloader.danmaku)
@@ -169,7 +182,7 @@ def play_acfun(url):
         if stream_type["id"] in downloader.streams:
             mpv = [
                 "mpv",
-                "--title=" + downloader.title,
+                "--force-media-title=" + downloader.title,
                 downloader.streams[stream_type["id"]]["src"],
             ]
             logging.debug(shlex.join(mpv))
@@ -178,15 +191,7 @@ def play_acfun(url):
 
 
 def play_weibo(url):
-    cookie = ""
-    try:
-        with open(
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "weibo.cookie")
-        ) as f:
-            cookie = f.read().strip()
-    except Exception as e:
-        logging.debug("read cookie %s", e)
-
+    cookie = get_cookie("bilibili")
     match = re.match(r"https://video.weibo.com/show\?fid=(\d{4}:\w+)", url)
     if match is None:
         return
@@ -209,7 +214,7 @@ def play_weibo(url):
     )
     mpv = [
         "mpv",
-        "--title=" + title,
+        "--force-media-title=" + title,
         url,
     ]
     logging.debug(shlex.join(mpv))
@@ -217,15 +222,7 @@ def play_weibo(url):
 
 
 def play_weibo_live(url):
-    cookie = ""
-    try:
-        with open(
-            os.path.join(os.path.dirname(os.path.realpath(__file__)), "weibo.cookie")
-        ) as f:
-            cookie = f.read().strip()
-    except Exception as e:
-        logging.debug("read cookie %s", e)
-
+    cookie = get_cookie("bilibili")
     match = re.match(r"https://weibo.com/l/wblive/p/show/(\d{4}:\w+)", url)
     if match is None:
         return
@@ -243,26 +240,65 @@ def play_weibo_live(url):
         url = r["data"]["replay_origin_url"]
     mpv = [
         "mpv",
-        "--title=" + title,
+        "--force-media-title=" + title,
         url,
     ]
     logging.debug(shlex.join(mpv))
     subprocess.call(mpv)
 
 
-def convert_short_url(url):
-    class noRedirect(urllib.request.HTTPRedirectHandler):
-        def http_error_302(self, req, fp, code, msg, headers):
-            return headers
-
-    if url.startswith("http://t.cn"):
-        headers = urllib.request.build_opener(noRedirect).open(url)
-        return headers.get("Location")
-
-    return url
+def play_anime1(url):
+    cookie = get_cookie("anime1")
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": UA,
+            "Cookie": cookie,
+        },
+    )
+    logging.debug(req.__dict__)
+    resp = urllib.request.urlopen(req).read().decode()
+    title = re.findall(r'<meta property="og:title" content="([^"]+)">', resp)[0]
+    apireq = re.findall(r'data-apireq="([^"]+)"', resp)[0]
+    req = urllib.request.Request(
+        "https://v.anime1.me/api",
+        headers={"User-Agent": UA},
+        data=b"d=" + apireq.encode(),
+        method="POST",
+    )
+    logging.debug(req.__dict__)
+    resp = urllib.request.urlopen(req)
+    info = resp.read()
+    logging.debug(info)
+    resp = urllib.request.urlopen(req)
+    m3u8 = "https:" + json.loads(info)["s"][0]["src"]
+    c = cookies.SimpleCookie()
+    for i in resp.headers.get_all("set-cookie"):
+        c.load(i)
+    cookie = c.output(header="", attrs=[], sep=";").strip()
+    headers = "Cookie:{0},User-Agent:{1}".format(cookie, UA.replace(",", "\,"))
+    mpv = [
+        "mpv",
+        "--http-header-fields=" + headers,
+        "--force-media-title=" + title,
+        m3u8,
+    ]
+    logging.debug(shlex.join(mpv))
+    subprocess.call(mpv)
 
 
 def main():
+    def convert_short_url(url):
+        class noRedirect(urllib.request.HTTPRedirectHandler):
+            def http_error_302(self, req, fp, code, msg, headers):
+                return headers
+
+        if url.startswith("http://t.cn"):
+            headers = urllib.request.build_opener(noRedirect).open(url)
+            return headers.get("Location")
+
+        return url
+
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
     args = parser.parse_args()
@@ -276,6 +312,8 @@ def main():
         play_weibo(url)
     elif url.startswith("https://weibo.com/l/wblive"):
         play_weibo_live(url)
+    elif url.startswith("https://anime1.me/"):
+        play_anime1(url)
 
 
 if __name__ == "__main__":
