@@ -53,7 +53,7 @@ def play_bilibili(url):
                 cookiejar.Cookie(
                     0,
                     k,
-                    v.value,
+                    urllib.parse.quote(v.value),
                     None,
                     False,
                     "",
