@@ -24,8 +24,6 @@ sys.path.extend(
 )
 
 
-from danmaku2ass import Danmaku2ASS
-from you_get.extractors import Bilibili, AcFun
 from you_get import common
 
 
@@ -70,6 +68,13 @@ def play_bilibili(url):
                 )
             )
 
+    def fake_url_size(url, faker=False, headers={}):
+        return 0
+
+    common.url_size = fake_url_size
+
+    from you_get.extractors import Bilibili
+
     downloader = Bilibili()
     downloader.url = url
     downloader.extract()
@@ -93,6 +98,9 @@ def play_bilibili(url):
 
     danmaku_file = tempfile.NamedTemporaryFile()
     danmaku = io.StringIO(downloader.danmaku)
+
+    from danmaku2ass import Danmaku2ASS
+
     Danmaku2ASS(
         [danmaku],
         "autodetect",
@@ -141,27 +149,23 @@ def play_bilibili(url):
         else:
             return url
 
-    if downloader.streams:
-        stream = downloader.streams[
-            sorted(
-                downloader.streams.keys(),
-                key=lambda k: quality.get(k.replace("dash-", ""), 0),
-            )[-1]
-        ]
-        logging.debug("stream quality %s", stream["quality"])
-        src = stream["src"]
+    streams = downloader.streams | downloader.dash_streams
+    quality_sorted = sorted(
+        [
+            (k, quality.get(k.removeprefix("dash-").removesuffix("-HEVC"), 0))
+            for k in streams.keys()
+        ],
+        key=lambda x: x[1],
+    )
+    logging.debug("stream quality %s", quality_sorted)
+    src = streams[quality_sorted[-1][0]]["src"]
+    if len(src) == 1:
         mpv.append(replace_hk(src[0]))
-    elif downloader.dash_streams:
-        stream = downloader.dash_streams[
-            sorted(
-                downloader.dash_streams.keys(),
-                key=lambda k: quality.get(k.replace("dash-", ""), 0),
-            )[-1]
-        ]
-        logging.debug("stream quality %s", stream["quality"])
-        src = stream["src"]
+    elif len(src) == 2:
         mpv.append("--audio-file=" + replace_hk(src[1][0]))
         mpv.append(replace_hk(src[0][0]))
+    else:
+        logging.error("unknown stream src %s", src)
 
     logging.debug(shlex.join(mpv))
     subprocess.call(
@@ -175,6 +179,8 @@ def play_bilibili(url):
 
 
 def play_acfun(url):
+    from you_get.extractors import AcFun
+
     downloader = AcFun()
     downloader.url = url
     downloader.prepare()
